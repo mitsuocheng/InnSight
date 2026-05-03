@@ -283,7 +283,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 csv_files = st.file_uploader(
-    "CSVファイルをアップロード（複数可）", type=["csv"], accept_multiple_files=True
+    "CSVファイルをアップロード（複数可）", type=["csv", "txt"], accept_multiple_files=True
 )
 
 st.markdown("""
