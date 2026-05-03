@@ -203,7 +203,7 @@ def fill_excel(wb, df, year, month, prop, today):
     ws["E8"] = prop["preparer"]
     ws["G8"] = today_dt
 
-    for r in range(11, 19):
+    for r in range(11, 20):
         ws[f"C{r}"] = None
         ws[f"G{r}"] = None
 
@@ -216,7 +216,7 @@ def fill_excel(wb, df, year, month, prop, today):
 
     ws["G26"] = int(df["サービス料_数値"].sum())
 
-    for r in range(27, 33):
+    for r in range(27, 35):
         ws[f"C{r}"] = None
         ws[f"G{r}"] = None
 
