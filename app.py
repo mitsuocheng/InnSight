@@ -171,8 +171,7 @@ PROPERTIES = {
     },
 }
 
-MAX_INCOME_ROWS = 8
-MAX_CLEANING_ROWS = 6
+MAX_BOOKINGS = 10  # 1ヶ月の最大予約件数
 
 
 def parse_airbnb_csv(file_obj):
@@ -191,41 +190,102 @@ def parse_airbnb_csv(file_obj):
 
 def fill_excel(wb, df, year, month, prop, today):
     ws = wb.worksheets[0]
-    ws.title = prop["sheet_name_template"].format(year=year, month=month)
+    n = min(len(df), MAX_BOOKINGS)
 
+    # テンプレートの固定行番号
+    T_INCOME_START = 11
+    T_INCOME_END   = 18   # 8スロット
+    T_INCOME_TOTAL = 20
+    T_RETURNS      = 21
+    T_REVENUE      = 22
+    T_OTA          = 26
+    T_CLEAN_START  = 27
+    T_MGMT         = 35
+    T_EXP_TOTAL    = 36
+    T_PRETAX       = 38
+    T_TAX_RATE     = 39
+    T_TAX          = 40
+    T_NET          = 42
+
+    # 8件超えた分だけ行を追加
+    extra = max(0, n - 8)
+
+    # 収入行を追加（行18の後ろに挿入）
+    if extra > 0:
+        ws.insert_rows(T_INCOME_END + 1, extra)
+
+    # 収入挿入後の行番号を再計算
+    R_INCOME_TOTAL = T_INCOME_TOTAL + extra
+    R_RETURNS      = T_RETURNS      + extra
+    R_REVENUE      = T_REVENUE      + extra
+    R_OTA          = T_OTA          + extra
+    R_CLEAN_START  = T_CLEAN_START  + extra
+    R_MGMT         = T_MGMT         + extra
+    R_EXP_TOTAL    = T_EXP_TOTAL    + extra
+    R_PRETAX       = T_PRETAX       + extra
+    R_TAX_RATE     = T_TAX_RATE     + extra
+    R_TAX          = T_TAX          + extra
+    R_NET          = T_NET          + extra
+
+    # 清掃費行を追加（管理費行の前に挿入）
+    if extra > 0:
+        ws.insert_rows(R_MGMT, extra)
+        R_MGMT      += extra
+        R_EXP_TOTAL += extra
+        R_PRETAX    += extra
+        R_TAX_RATE  += extra
+        R_TAX       += extra
+        R_NET       += extra
+
+    # 収入行をクリア
+    for r in range(T_INCOME_START, R_INCOME_TOTAL):
+        ws[f"C{r}"] = None
+        ws[f"G{r}"] = None
+
+    # 清掃費行をクリア
+    for r in range(R_CLEAN_START, R_MGMT):
+        ws[f"C{r}"] = None
+        ws[f"G{r}"] = None
+
+    # ヘッダー
+    ws.title = prop["sheet_name_template"].format(year=year, month=month)
     ws["B5"] = prop["hotel_name"]
     ws["F5"] = df["開始日_dt"].min().to_pydatetime()
     ws["G5"] = df["終了日_dt"].max().to_pydatetime()
-
     today_dt = datetime(today.year, today.month, today.day)
     ws["B8"] = prop["preparer"]
     ws["D8"] = today_dt
     ws["E8"] = prop["preparer"]
     ws["G8"] = today_dt
 
-    for r in range(11, 20):
-        ws[f"C{r}"] = None
-        ws[f"G{r}"] = None
-
+    # 収入明細を記入
     for i, (_, row) in enumerate(df.iterrows()):
-        if i >= MAX_INCOME_ROWS:
-            break
+        if i >= n: break
         s, e = row["開始日_dt"], row["終了日_dt"]
-        ws[f"C{11 + i}"] = f"OTA(airbnb)ゲスト予約({s.year}/{s.month}/{s.day}-{e.year}/{e.month}/{e.day})"
-        ws[f"G{11 + i}"] = int(row["総収入_数値"])
+        ws[f"C{T_INCOME_START + i}"] = f"OTA(airbnb)ゲスト予約({s.year}/{s.month}/{s.day}-{e.year}/{e.month}/{e.day})"
+        ws[f"G{T_INCOME_START + i}"] = int(row["総収入_数値"])
 
-    ws["G26"] = int(df["サービス料_数値"].sum())
+    # 数式を再構築
+    ws[f"G{R_INCOME_TOTAL}"] = f"=SUM(G{T_INCOME_START}:G{R_INCOME_TOTAL - 1})"
+    ws[f"G{R_REVENUE}"]      = f"=G{R_INCOME_TOTAL}+G{R_RETURNS}"
 
-    for r in range(27, 35):
-        ws[f"C{r}"] = None
-        ws[f"G{r}"] = None
+    # OTAサービス料
+    ws[f"G{R_OTA}"] = int(df["サービス料_数値"].sum())
 
+    # 清掃費を記入
     for i, (_, row) in enumerate(df.iterrows()):
-        if i >= MAX_CLEANING_ROWS:
-            break
+        if i >= n: break
         checkout = row["終了日_dt"]
-        ws[f"C{27 + i}"] = f"清掃費{checkout.month}/{checkout.day}"
-        ws[f"G{27 + i}"] = 13500
+        ws[f"C{R_CLEAN_START + i}"] = f"清掃費{checkout.month}/{checkout.day}"
+        ws[f"G{R_CLEAN_START + i}"] = 13500
+
+    # 管理費・合計・純収益の数式を再構築
+    cleaning_refs = "-".join([f"G{R_CLEAN_START + i}" for i in range(n)])
+    ws[f"G{R_MGMT}"]      = f"=(G{R_REVENUE}-G{R_OTA}-{cleaning_refs})*0.3"
+    ws[f"G{R_EXP_TOTAL}"] = f"=SUM(G{R_OTA}:G{R_MGMT})"
+    ws[f"G{R_PRETAX}"]    = f"=G{R_INCOME_TOTAL}-G{R_EXP_TOTAL}"
+    ws[f"G{R_TAX}"]       = f"=G{R_PRETAX}*G{R_TAX_RATE}"
+    ws[f"G{R_NET}"]       = f"=G{R_PRETAX}-G{R_TAX}"
 
     return wb
 
@@ -348,10 +408,8 @@ if csv_files:
         with col2:
             month = st.number_input("月", value=int(min_date.month), min_value=1, max_value=12)
 
-        if len(combined_df) > MAX_INCOME_ROWS:
-            st.warning(f"予約件数が{MAX_INCOME_ROWS}件を超えています（{len(combined_df)}件）。収入明細は最初の{MAX_INCOME_ROWS}件のみ記入されます。")
-        if len(combined_df) > MAX_CLEANING_ROWS:
-            st.warning(f"清掃費はテンプレートの上限（{MAX_CLEANING_ROWS}件）を超えているため、最初の{MAX_CLEANING_ROWS}件のみ記入されます。")
+        if len(combined_df) > MAX_BOOKINGS:
+            st.warning(f"予約件数が上限（{MAX_BOOKINGS}件）を超えています（{len(combined_df)}件）。最初の{MAX_BOOKINGS}件のみ記入されます。")
 
         st.subheader("データプレビュー")
         preview = combined_df[["開始日_dt", "終了日_dt", "総収入_数値", "サービス料_数値"]].copy()
@@ -367,7 +425,7 @@ if csv_files:
         c2.metric("総収入合計", f"¥{combined_df['総収入_数値'].sum():,.0f}")
         c3, c4 = st.columns(2)
         c3.metric("OTAサービス料", f"¥{combined_df['サービス料_数値'].sum():,.0f}")
-        c4.metric("清掃費合計", f"¥{min(len(combined_df), MAX_CLEANING_ROWS) * 13500:,}")
+        c4.metric("清掃費合計", f"¥{min(len(combined_df), MAX_BOOKINGS) * 13500:,}")
 
 st.divider()
 
