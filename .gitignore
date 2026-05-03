@@ -1,4 +1,4 @@
-*.xlsx
+﻿*.xlsx
 *.csv
 tmp_csv.txt
 __pycache__/
