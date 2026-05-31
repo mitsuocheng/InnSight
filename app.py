@@ -158,13 +158,11 @@ hr { border-color: #dde4f0; }
 
 PROPERTIES = {
     "MU HOUSE IKEBUKURO": {
-        "preparer": "鄭光男",
         "file_prefix": "MU HOUSE IKEBUKURO_収益計算_",
         "sheet_name_template": "MU HOUSE IKEBUKUR - {year}年{month}月_損益",
         "hotel_name": "MU HOUSE IKEBUKURO",
     },
     "Otsuka Stay Base": {
-        "preparer": "鄭光男",
         "file_prefix": "Otsuka Stay Base_収益計算_",
         "sheet_name_template": "Otsuka Stay Base - {year}年{month}月_損益",
         "hotel_name": "Otsuka Stay Base",
@@ -188,7 +186,7 @@ def parse_airbnb_csv(file_obj):
     return df.sort_values("開始日_dt").reset_index(drop=True)
 
 
-def fill_excel(wb, df, year, month, prop, today):
+def fill_excel(wb, df, year, month, prop, today, preparer, verifier):
     ws = wb.worksheets[0]
     n = min(len(df), MAX_BOOKINGS)
 
@@ -253,9 +251,9 @@ def fill_excel(wb, df, year, month, prop, today):
     ws["F5"] = df["開始日_dt"].min().to_pydatetime()
     ws["G5"] = df["終了日_dt"].max().to_pydatetime()
     today_dt = datetime(today.year, today.month, today.day)
-    ws["B8"] = prop["preparer"]
+    ws["B8"] = preparer
     ws["D8"] = today_dt
-    ws["E8"] = prop["preparer"]
+    ws["E8"] = verifier
     ws["G8"] = today_dt
 
     # 収入明細を記入
@@ -387,6 +385,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 today = st.date_input("", value=date.today(), label_visibility="collapsed")
 
+st.markdown("""
+<div class="section-card">
+  <span class="section-num">4</span>
+  <span class="section-title">担当者</span>
+</div>
+""", unsafe_allow_html=True)
+col_p, col_v = st.columns(2)
+with col_p:
+    preparer = st.text_input("準備担当者", value="", placeholder="氏名を入力")
+with col_v:
+    verifier = st.text_input("検証者", value="", placeholder="氏名を入力")
+
 combined_df = None
 year, month = date.today().year, date.today().month
 
@@ -433,7 +443,7 @@ can_generate = combined_df is not None and template_file is not None
 if st.button("Excelを生成する", type="primary", disabled=not can_generate):
     try:
         wb = load_workbook(template_file)
-        wb = fill_excel(wb, combined_df, int(year), int(month), prop_config, today)
+        wb = fill_excel(wb, combined_df, int(year), int(month), prop_config, today, preparer, verifier)
 
         output = io.BytesIO()
         wb.save(output)
